@@ -1273,6 +1273,7 @@ function renderDailyTable() {
     const wdStyle = e.date ? (() => { const d=new Date(e.date+'T00:00:00').getDay(); return d===0?'color:#e05c6a':d===6?'color:#5b8ee0':''; })() : '';
 
     // 百貨箱數／EC箱數換算：若備註有寫 EC 數字，先從總數扣除 EC，剩下才算百貨（確保兩者相加＝總數）
+    // 沒寫備註時，全部都算百貨，不顯示 EC（沒有依據可以拆分）
     let boxHtml = '';
     if (prod && e.actual) {
       const generalBq = prod.box_qty || BOX_QTY_PRESET[prod.code] || 0;
@@ -1283,14 +1284,18 @@ function renderDailyTable() {
       const ecQty = ecMatch ? parseInt(ecMatch[1]) : 0;
       const departmentQty = Math.max(0, e.actual - ecQty); // 百貨數量＝總數－EC數量
 
-      if (generalBq > 1) parts.push(`<span style="color:var(--accent)">百貨${fmt(departmentQty)}個（${Math.floor(departmentQty/generalBq)}箱）</span>`);
-
-      if (ecQty > 0) {
-        const ecBoxesFromNote = ecBq > 1 ? Math.floor(ecQty / ecBq) : null;
-        parts.push(`<span style="color:#9b7de8">EC${fmt(ecQty)}個${ecBoxesFromNote!==null ? `（${ecBoxesFromNote}箱）` : ''}</span>`);
-      } else if (ecBq > 1) {
-        parts.push(`<span style="color:#9b7de8">EC${Math.floor(e.actual/ecBq)}箱</span><span class="muted" style="font-size:9px">(估)</span>`);
+      if (generalBq > 1) {
+        const deptBoxes = Math.floor(departmentQty / generalBq);
+        const deptRemainder = departmentQty % generalBq;
+        parts.push(`<span style="color:var(--accent)">百貨${fmt(departmentQty)}個（${fmt(deptBoxes)}箱${deptRemainder ? `餘${deptRemainder}` : ''}）</span>`);
       }
+
+      if (ecQty > 0 && ecBq > 1) {
+        const ecBoxes = Math.floor(ecQty / ecBq);
+        const ecRemainder = ecQty % ecBq;
+        parts.push(`<span style="color:#9b7de8">EC${fmt(ecQty)}個（${fmt(ecBoxes)}箱${ecRemainder ? `餘${ecRemainder}` : ''}）</span>`);
+      }
+      // 沒有備註寫 EC 數字時，不顯示任何 EC 估算——因為沒有依據判斷這批貨裡有沒有 EC
 
       if (parts.length) boxHtml = `<div style="font-size:10px;margin-top:2px;">${parts.join(' ｜ ')}</div>`;
     }
