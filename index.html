@@ -1252,21 +1252,24 @@ function renderDailyTable() {
     const wd = weekday(e.date);
     const wdStyle = e.date ? (() => { const d=new Date(e.date+'T00:00:00').getDay(); return d===0?'color:#e05c6a':d===6?'color:#5b8ee0':''; })() : '';
 
-    // 百貨箱數／EC箱數換算（依品番的入數設定；若備註有寫 EC 數字，優先用備註的真實個數換算 EC 箱數）
+    // 百貨箱數／EC箱數換算：若備註有寫 EC 數字，先從總數扣除 EC，剩下才算百貨（確保兩者相加＝總數）
     let boxHtml = '';
     if (prod && e.actual) {
       const generalBq = prod.box_qty || BOX_QTY_PRESET[prod.code] || 0;
       const ecBq = prod.ec_box_qty || generalBq;
       const parts = [];
-      if (generalBq > 1) parts.push(`<span style="color:var(--accent)">百貨${Math.floor(e.actual/generalBq)}箱</span>`);
 
       const ecMatch = (e.note||'').match(/EC[^0-9]{0,6}([0-9]+)/i);
-      if (ecMatch) {
-        const ecQty = parseInt(ecMatch[1]);
+      const ecQty = ecMatch ? parseInt(ecMatch[1]) : 0;
+      const departmentQty = Math.max(0, e.actual - ecQty); // 百貨數量＝總數－EC數量
+
+      if (generalBq > 1) parts.push(`<span style="color:var(--accent)">百貨${fmt(departmentQty)}個（${Math.floor(departmentQty/generalBq)}箱）</span>`);
+
+      if (ecQty > 0) {
         const ecBoxesFromNote = ecBq > 1 ? Math.floor(ecQty / ecBq) : null;
-        parts.push(`<span style="color:#9b7de8">EC ${fmt(ecQty)}個${ecBoxesFromNote!==null ? `（${ecBoxesFromNote}箱）` : ''}</span>`);
+        parts.push(`<span style="color:#9b7de8">EC${fmt(ecQty)}個${ecBoxesFromNote!==null ? `（${ecBoxesFromNote}箱）` : ''}</span>`);
       } else if (ecBq > 1) {
-        parts.push(`<span style="color:#9b7de8">EC${Math.floor(e.actual/ecBq)}箱</span>`);
+        parts.push(`<span style="color:#9b7de8">EC${Math.floor(e.actual/ecBq)}箱</span><span class="muted" style="font-size:9px">(估)</span>`);
       }
 
       if (parts.length) boxHtml = `<div style="font-size:10px;margin-top:2px;">${parts.join(' ｜ ')}</div>`;
@@ -1282,7 +1285,7 @@ function renderDailyTable() {
       <td class="num ${diffCls}" data-th="差異">${diffTxt}</td>
       <td class="num muted" data-th="累進率">${cumRate}</td>
       <td class="num muted" data-th="人數">${e.workers || '–'}</td>
-      <td class="muted" data-th="備注" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.note||''}">${e.note||''}${(() => { const m = (e.note||'').match(/EC[^0-9]{0,6}([0-9]+)/i); return m ? ` <span style="color:#9b7de8;font-size:10px;font-weight:700">[EC ${fmt(parseInt(m[1]))}]</span>` : ''; })()}</td>
+      <td class="muted" data-th="備注" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${e.note?'pointer':'default'}" title="${e.note?'點擊展開/收合':''}" onclick="this.style.whiteSpace = this.style.whiteSpace==='nowrap' ? 'normal' : 'nowrap'; this.style.maxWidth = this.style.maxWidth==='160px' ? '280px' : '160px';">${e.note||''}</td>
       <td class="muted" data-th="輸入者" style="font-size:11px">${e.createdBy || '–'}${e.editedBy ? `<br><span style="color:var(--text3)">改:${e.editedBy}</span>` : ''}</td>
       <td style="white-space:nowrap">
         <button class="btn-alloc" onclick="openEditEntry('${e.id}')">編輯</button>
@@ -1770,7 +1773,7 @@ function renderDash() {
   const recent = [...entries].sort((a,b) => b.date.localeCompare(a.date)||b.createdAt-a.createdAt).slice(0,10);
   document.getElementById('dash-recent').innerHTML = recent.length ? recent.map(e=>
     `<tr><td class="muted" data-th="日期">${e.date}</td><td data-th="品番">${tag(e.brand)} <b>${e.product}</b></td>
-    <td class="num" data-th="實際">${fmt(e.actual)}</td><td class="muted" data-th="備注" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.note||''}</td></tr>`
+    <td class="num" data-th="實際">${fmt(e.actual)}</td><td class="muted" data-th="備注" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${e.note?'pointer':'default'}" title="${e.note?'點擊展開/收合':''}" onclick="this.style.whiteSpace = this.style.whiteSpace==='nowrap' ? 'normal' : 'nowrap'; this.style.maxWidth = this.style.maxWidth==='120px' ? '260px' : '120px';">${e.note||''}</td></tr>`
   ).join('') : `<tr><td colspan="4"><div class="empty-state"><div class="empty-text">尚無記錄</div></div></td></tr>`;
 
   // 配分總覽
