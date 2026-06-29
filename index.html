@@ -1251,17 +1251,38 @@ function renderDailyTable() {
     const diffTxt = !e.target ? '–' : (diff>=0?'+':'') + fmt(diff);
     const wd = weekday(e.date);
     const wdStyle = e.date ? (() => { const d=new Date(e.date+'T00:00:00').getDay(); return d===0?'color:#e05c6a':d===6?'color:#5b8ee0':''; })() : '';
+
+    // 百貨箱數／EC箱數換算（依品番的入數設定；若備註有寫 EC 數字，優先用備註的真實個數換算 EC 箱數）
+    let boxHtml = '';
+    if (prod && e.actual) {
+      const generalBq = prod.box_qty || BOX_QTY_PRESET[prod.code] || 0;
+      const ecBq = prod.ec_box_qty || generalBq;
+      const parts = [];
+      if (generalBq > 1) parts.push(`<span style="color:var(--accent)">百貨${Math.floor(e.actual/generalBq)}箱</span>`);
+
+      const ecMatch = (e.note||'').match(/EC[^0-9]{0,6}([0-9]+)/i);
+      if (ecMatch) {
+        const ecQty = parseInt(ecMatch[1]);
+        const ecBoxesFromNote = ecBq > 1 ? Math.floor(ecQty / ecBq) : null;
+        parts.push(`<span style="color:#9b7de8">EC ${fmt(ecQty)}個${ecBoxesFromNote!==null ? `（${ecBoxesFromNote}箱）` : ''}</span>`);
+      } else if (ecBq > 1) {
+        parts.push(`<span style="color:#9b7de8">EC${Math.floor(e.actual/ecBq)}箱</span>`);
+      }
+
+      if (parts.length) boxHtml = `<div style="font-size:10px;margin-top:2px;">${parts.join(' ｜ ')}</div>`;
+    }
+
     return `<tr>
       <td class="bold" data-th="日期">${e.date}</td>
       <td class="muted" data-th="星期" style="${wdStyle}">${wd}</td>
       <td data-th="品牌">${tag(e.brand)}</td>
       <td class="bold" data-th="品番">${e.product||'–'}</td>
       <td class="num muted" data-th="目標量">${e.target ? fmt(e.target) : '–'}</td>
-      <td class="num bold" data-th="實際數量">${fmt(e.actual)}</td>
+      <td class="num bold" data-th="實際數量">${fmt(e.actual)}${boxHtml}</td>
       <td class="num ${diffCls}" data-th="差異">${diffTxt}</td>
       <td class="num muted" data-th="累進率">${cumRate}</td>
       <td class="num muted" data-th="人數">${e.workers || '–'}</td>
-      <td class="muted" data-th="備注" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.note||''}">${e.note||''}</td>
+      <td class="muted" data-th="備注" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.note||''}">${e.note||''}${(() => { const m = (e.note||'').match(/EC[^0-9]{0,6}([0-9]+)/i); return m ? ` <span style="color:#9b7de8;font-size:10px;font-weight:700">[EC ${fmt(parseInt(m[1]))}]</span>` : ''; })()}</td>
       <td class="muted" data-th="輸入者" style="font-size:11px">${e.createdBy || '–'}${e.editedBy ? `<br><span style="color:var(--text3)">改:${e.editedBy}</span>` : ''}</td>
       <td style="white-space:nowrap">
         <button class="btn-alloc" onclick="openEditEntry('${e.id}')">編輯</button>
@@ -1310,6 +1331,7 @@ function openEditEntry(id) {
   document.getElementById('e-note').value    = e.note    || '';
   document.getElementById('e-preview').style.display = 'none';
   document.getElementById('e-actual').oninput = updateEntryPreview;
+  updateEntryPreview();
   openModal('m-entry');
 }
 
@@ -1328,6 +1350,7 @@ function updateEntryPreview() {
   const pid     = sel.value;
   const actual  = parseInt(document.getElementById('e-actual').value) || 0;
   const prod    = products.find(p => p.id === pid);
+
   if(!prod || !actual) { document.getElementById('e-preview').style.display='none'; return; }
   const editId  = document.getElementById('e-id').value;
   const already = totalProduced(pid) - (editId ? (entries.find(x=>x.id===editId)?.actual||0) : 0);
@@ -1377,11 +1400,31 @@ function saveEntry() {
     rec.createdBy = currentUser?.name || '';
     entries.push(rec);
   }
+
+  // 從備註自動解析 EC 數量（例如「EC500」「EC 500」「EC：500」「這筆EC有500個」）
+  // 若有解析到，自動把該數字累加進該品番的出貨配分 EC 欄位
+  let ecDetected = null;
+  if (pid && note) {
+    const ecMatch = note.match(/EC[^0-9]{0,6}([0-9]+)/i);
+    if (ecMatch) {
+      ecDetected = parseInt(ecMatch[1]);
+      if (!isNaN(ecDetected) && ecDetected > 0) {
+        if (!allocs[pid]) allocs[pid] = { vt:0, web:0, ec:0, buy:0 };
+        allocs[pid].ec = ecDetected; // 直接設為解析到的數量（同一筆記錄重新編輯也會更新成最新值）
+        allocs[pid].note = (allocs[pid].note || '') ;
+        allocs[pid].updatedAt = today();
+        allocs[pid].updatedBy = currentUser?.name || '';
+      }
+    }
+  }
+
   // 如果這筆記錄之前已同步過，標記為需要重新同步
   if (editId && syncedIds[editId]) {
     delete syncedIds[editId];
     save('vt_synced_ids', syncedIds);
     toast(`${productName}：數量已更新，請重新同步到 DASKA`, 'info');
+  } else if (ecDetected) {
+    toast(`${productName}：${fmt(actual)} 個已記錄，並自動偵測 EC ${fmt(ecDetected)} 個`, 'ok');
   } else {
     toast(`${productName}：${fmt(actual)} 個已記錄`, 'ok');
   }
