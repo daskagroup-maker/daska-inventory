@@ -346,6 +346,14 @@ hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
   .stat { min-width: 100%; }
   .ac-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 備注展開/收合（電腦版＋手機版通用）── */
+td[data-th="備注"].note-expanded {
+  white-space: normal !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+}
 </style>
 <!-- Firebase SDK (載入後才能用 file:// 開啟) -->
 <script type="module">
@@ -1297,7 +1305,7 @@ function renderDailyTable() {
       <td class="num ${diffCls}" data-th="差異">${diffTxt}</td>
       <td class="num muted" data-th="累進率">${cumRate}</td>
       <td class="num muted" data-th="人數">${e.workers || '–'}</td>
-      <td class="muted" data-th="備注" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${e.note?'pointer':'default'}" title="${e.note?'點擊展開/收合':''}" onclick="this.style.whiteSpace = this.style.whiteSpace==='nowrap' ? 'normal' : 'nowrap'; this.style.maxWidth = this.style.maxWidth==='160px' ? '100%' : '160px'; this.style.overflow = this.style.overflow==='hidden' ? 'visible' : 'hidden';">${e.note||''}</td>
+      <td class="muted" data-th="備注" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${e.note?'pointer':'default'}" title="${e.note?'點擊展開/收合':''}" onclick="${e.note ? 'toggleNoteExpand(this)' : ''}">${e.note||''}</td>
       <td class="muted" data-th="輸入者" style="font-size:11px">${e.createdBy || '–'}${e.editedBy ? `<br><span style="color:var(--text3)">改:${e.editedBy}</span>` : ''}</td>
       <td style="white-space:nowrap">
         <button class="btn-alloc" onclick="openEditEntry('${e.id}')">編輯</button>
@@ -1785,7 +1793,7 @@ function renderDash() {
   const recent = [...entries].sort((a,b) => b.date.localeCompare(a.date)||b.createdAt-a.createdAt).slice(0,10);
   document.getElementById('dash-recent').innerHTML = recent.length ? recent.map(e=>
     `<tr><td class="muted" data-th="日期">${e.date}</td><td data-th="品番">${tag(e.brand)} <b>${e.product}</b></td>
-    <td class="num" data-th="實際">${fmt(e.actual)}</td><td class="muted" data-th="備注" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${e.note?'pointer':'default'}" title="${e.note?'點擊展開/收合':''}" onclick="this.style.whiteSpace = this.style.whiteSpace==='nowrap' ? 'normal' : 'nowrap'; this.style.maxWidth = this.style.maxWidth==='120px' ? '100%' : '120px'; this.style.overflow = this.style.overflow==='hidden' ? 'visible' : 'hidden';">${e.note||''}</td></tr>`
+    <td class="num" data-th="實際">${fmt(e.actual)}</td><td class="muted" data-th="備注" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${e.note?'pointer':'default'}" title="${e.note?'點擊展開/收合':''}" onclick="${e.note ? 'toggleNoteExpand(this)' : ''}">${e.note||''}</td></tr>`
   ).join('') : `<tr><td colspan="4"><div class="empty-state"><div class="empty-text">尚無記錄</div></div></td></tr>`;
 
   // 配分總覽
@@ -1827,6 +1835,13 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 document.querySelectorAll('.modal-bg').forEach(bg => {
   bg.addEventListener('click', e => { if(e.target === bg) bg.classList.remove('open'); });
 });
+
+// ╔══════════════════════════════════════════════════╗
+// ║  備注展開/收合                                   ║
+// ╚══════════════════════════════════════════════════╝
+function toggleNoteExpand(el) {
+  el.classList.toggle('note-expanded');
+}
 
 // ╔══════════════════════════════════════════════════╗
 // ║  Toast                                           ║
