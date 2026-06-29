@@ -131,6 +131,25 @@ input.fc { min-width: 110px; }
 .modal-grid.g3 { grid-template-columns: 1fr 1fr 1fr; }
 .full-col { grid-column: 1 / -1; }
 
+/* ── 工作日誌 可收合分類區塊 ── */
+.log-section { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 10px; overflow: hidden; }
+.log-section-summary { padding: 12px 16px; cursor: pointer; font-weight: 700; font-size: 13px; color: var(--accent); list-style: none; display: flex; align-items: center; user-select: none; }
+.log-section-summary::-webkit-details-marker { display: none; }
+.log-section-summary::before { content: '▸'; margin-right: 8px; transition: transform .15s; display: inline-block; }
+.log-section[open] .log-section-summary::before { transform: rotate(90deg); }
+.log-section-body { padding: 4px 16px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 600px) {
+  .log-section-body { grid-template-columns: 1fr; }
+}
+.log-group { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; margin: 0 16px 10px; }
+.log-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.log-group-head input { flex: 1; }
+.log-group-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 600px) {
+  .log-group-body { grid-template-columns: 1fr; }
+}
+.log-add-group-btn { margin: 0 16px 14px; }
+
 /* ── ALLOC MODAL ── */
 .alloc-header { background: var(--bg3); border-radius: var(--r); padding: 14px 16px; margin-bottom: 16px; display: flex; gap: 24px; flex-wrap: wrap; }
 .alloc-total-box { display: flex; flex-direction: column; gap: 2px; }
@@ -375,6 +394,8 @@ td[data-th="內容"] {
   overflow-wrap: anywhere;
 }
 </style>
+<!-- SheetJS (用於匯出 Excel .xlsx，欄寬自動調整) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- Firebase SDK (載入後才能用 file:// 開啟) -->
 <script type="module">
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -494,8 +515,10 @@ td[data-th="內容"] {
       <label>日期（迄）</label>
       <input type="date" class="fc" id="df-to" onchange="renderDailyTable()">
     </div>
-    <div style="margin-left:auto; display:flex; gap:8px; align-self:flex-end;">
+    <div style="margin-left:auto; display:flex; gap:8px; align-self:flex-end; flex-wrap:wrap;">
       <span class="chip" id="daily-count">0 筆</span>
+      <button class="btn btn-ghost btn-sm" onclick="setDailyDateRange('today')">今天</button>
+      <button class="btn btn-ghost btn-sm" onclick="setDailyDateRange('week')">本週</button>
       <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ 匯出 CSV</button>
     </div>
   </div>
@@ -637,16 +660,6 @@ td[data-th="內容"] {
 <div class="panel" id="p-log">
   <div class="form-row">
     <div class="fg">
-      <label>分類</label>
-      <select class="fc" id="lf-category" onchange="renderWorkLog()">
-        <option value="">全部分類</option>
-        <option value="開合">開合</option>
-        <option value="中段">中段</option>
-        <option value="後段">後段</option>
-        <option value="巧克力">巧克力</option>
-      </select>
-    </div>
-    <div class="fg">
       <label>日期（起）</label>
       <input type="date" class="fc" id="lf-from" onchange="renderWorkLog()">
     </div>
@@ -654,8 +667,16 @@ td[data-th="內容"] {
       <label>日期（迄）</label>
       <input type="date" class="fc" id="lf-to" onchange="renderWorkLog()">
     </div>
-    <div style="margin-left:auto; display:flex; gap:8px; align-self:flex-end;">
+    <div class="fg">
+      <label>品項搜尋</label>
+      <input class="fc fc-wide" id="lf-product" placeholder="輸入品項…" oninput="renderWorkLog()">
+    </div>
+    <div style="margin-left:auto; display:flex; gap:8px; align-self:flex-end; flex-wrap:wrap;">
       <span class="chip" id="log-count">0 筆</span>
+      <button class="btn btn-ghost btn-sm" onclick="setLogDateRange('today')">今天</button>
+      <button class="btn btn-ghost btn-sm" onclick="setLogDateRange('week')">本週</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportLogCSV()">⬇ 匯出 Excel</button>
+      <button class="btn" style="background:var(--blue);color:#fff;" onclick="mergeSelectedLogs()">🔗 合併選取</button>
       <button class="btn btn-primary" onclick="openAddLog()">＋ 新增日誌</button>
     </div>
   </div>
@@ -663,7 +684,8 @@ td[data-th="內容"] {
     <table>
       <thead>
         <tr>
-          <th>日期</th><th>星期</th><th>分類</th><th>內容</th><th>記錄人</th><th></th>
+          <th style="width:30px"></th>
+          <th>日期</th><th>星期</th><th>品項</th><th class="num">目標產量</th><th class="num">上班總人數</th><th>已填分類</th><th>記錄人</th><th></th>
         </tr>
       </thead>
       <tbody id="t-log"></tbody>
@@ -675,30 +697,34 @@ td[data-th="內容"] {
 
 <!-- ═══ 新增/編輯 工作日誌 MODAL ═══ -->
 <div class="modal-bg" id="m-log">
-  <div class="modal">
+  <div class="modal" style="width:720px;">
     <div class="modal-title">
       <span id="m-log-title">📝 新增工作日誌</span>
     </div>
     <input type="hidden" id="log-id">
-    <div class="modal-grid">
+
+    <div class="modal-section">基本資訊</div>
+    <div class="modal-grid g3">
       <div class="fg">
         <label>日期</label>
         <input type="date" class="fc" id="log-date">
       </div>
       <div class="fg">
-        <label>分類 <span style="color:var(--red)">*</span></label>
-        <select class="fc" id="log-category">
-          <option value="開合">開合</option>
-          <option value="中段">中段</option>
-          <option value="後段">後段</option>
-          <option value="巧克力">巧克力</option>
-        </select>
+        <label>品項</label>
+        <input class="fc" id="log-product" placeholder="例：T3、CT8…">
+      </div>
+      <div class="fg">
+        <label>目標產量</label>
+        <input type="number" class="fc fc-num" id="log-target" placeholder="0" min="0">
       </div>
     </div>
-    <div class="fg" style="margin-top:12px;">
-      <label>內容描述 <span style="color:var(--red)">*</span></label>
-      <textarea class="fc" id="log-content" rows="5" placeholder="記錄發生的事件、問題、處理情況…" style="resize:vertical;min-height:100px;font-family:var(--f);"></textarea>
+    <div class="fg" style="margin-top:10px;">
+      <label>上班總人數</label>
+      <input type="number" class="fc fc-num" id="log-totalworkers" placeholder="0" min="0" style="max-width:160px;">
     </div>
+
+    <div id="log-sections" style="margin-top:18px;"></div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('m-log')">取消</button>
       <button class="btn btn-primary" onclick="saveWorkLog()">✓ 儲存</button>
@@ -1342,7 +1368,7 @@ function switchTab(name) {
 let allocPill = 'all';
 let prodFilter = '';
 
-function renderDailyTable() {
+function getFilteredDailyEntries() {
   const bf = document.getElementById('df-brand').value;
   const pf = (document.getElementById('df-prod').value || '').toLowerCase();
   const df = document.getElementById('df-from').value;
@@ -1353,7 +1379,32 @@ function renderDailyTable() {
   if(pf) data = data.filter(e => (e.product||'').toLowerCase().includes(pf));
   if(df) data = data.filter(e => e.date >= df);
   if(dt) data = data.filter(e => e.date <= dt);
+  return data;
+}
 
+// 快速設定日期區間：今天 或 本週（週一～週日）
+function setDailyDateRange(range) {
+  const now = new Date();
+  if (range === 'today') {
+    const t = today();
+    document.getElementById('df-from').value = t;
+    document.getElementById('df-to').value = t;
+  } else if (range === 'week') {
+    const day = now.getDay(); // 0=日, 1=一...6=六
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt2 = d => d.toISOString().split('T')[0];
+    document.getElementById('df-from').value = fmt2(monday);
+    document.getElementById('df-to').value = fmt2(sunday);
+  }
+  renderDailyTable();
+}
+
+function renderDailyTable() {
+  const data = getFilteredDailyEntries();
   document.getElementById('daily-count').textContent = data.length + ' 筆';
 
   const tbody = document.getElementById('t-daily');
@@ -1575,8 +1626,10 @@ function deleteEntry(id) {
 
 // CSV 匯出
 function exportCSV() {
+  const data = getFilteredDailyEntries(); // 匯出目前畫面篩選後的資料（可先用「今天」/「本週」按鈕快速設定範圍）
+  if (!data.length) { toast('目前篩選範圍內沒有資料可匯出', 'info'); return; }
+
   const rows = [['日期','星期','品牌','品番','目標量','實際數量','差異','人數','備注']];
-  const data = [...entries].sort((a,b) => b.date.localeCompare(a.date));
   data.forEach(e => {
     const diff = (e.actual||0) - (e.target||0);
     rows.push([e.date, weekday(e.date), e.brand, e.product, e.target||0, e.actual||0, diff, e.workers||0, e.note||'']);
@@ -1584,8 +1637,13 @@ function exportCSV() {
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a   = document.createElement('a');
   a.href    = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
-  a.download= `生產記錄_${today()}.csv`;
+
+  const df = document.getElementById('df-from').value;
+  const dt = document.getElementById('df-to').value;
+  const rangeLabel = df && dt ? (df === dt ? df : `${df}_至_${dt}`) : today();
+  a.download= `生產記錄_${rangeLabel}.csv`;
   a.click();
+  toast(`已匯出 ${data.length} 筆記錄`, 'ok');
 }
 
 // ╔══════════════════════════════════════════════════╗
@@ -1944,27 +2002,277 @@ document.querySelectorAll('.modal-bg').forEach(bg => {
 // ╔══════════════════════════════════════════════════╗
 // ║  工作日誌                                        ║
 // ╚══════════════════════════════════════════════════╝
-const LOG_CATEGORY_COLORS = {
-  '開合':  'var(--blue)',
-  '中段':  'var(--accent)',
-  '後段':  'var(--green)',
-  '巧克力': '#9b7de8',
-};
+// 欄位類型：'time_pair'（開工/結束時間）、'number'（數字）、'text'（文字描述）
+const LOG_SCHEMA = [
+  { key:'開盒中段', label:'開盒/中段', fields:[
+    {key:'開工結束時間', label:'開工/結束時間', type:'time_pair'},
+    {key:'中途停機總時間', label:'中途停機總時間', type:'number'},
+    {key:'人力配置數', label:'人力配置數', type:'number'},
+    {key:'開盒數', label:'開盒數', type:'number'},
+    {key:'新人狀況', label:'新人狀況', type:'text'},
+    {key:'每車數量', label:'每車數量', type:'number'},
+    {key:'特殊記事異常狀況', label:'特殊記事/異常狀況', type:'text'},
+    {key:'產品轉換時間', label:'產品轉換時間', type:'number'},
+    {key:'其他', label:'其他', type:'text'},
+  ]},
+  { key:'巧克力桌', label:'巧克力桌', fields:[
+    {key:'開工結束時間', label:'開工/結束時間', type:'time_pair'},
+    {key:'中途停機總時間', label:'中途停機總時間', type:'number'},
+    {key:'軌道速度', label:'軌道速度', type:'number'},
+    {key:'每分產量每車分鐘數', label:'每分產量/每車分鐘數', type:'number'},
+    {key:'人力配置數', label:'人力配置數', type:'number'},
+    {key:'新人狀況', label:'新人狀況', type:'text'},
+    {key:'特殊記事異常狀況', label:'特殊記事/異常狀況', type:'text'},
+    {key:'產品轉換時間', label:'產品轉換時間', type:'number'},
+    {key:'其他', label:'其他', type:'text'},
+  ]},
+  { key:'巧克力桌LE', label:'巧克力桌LE', fields:[
+    {key:'袋子使用數', label:'袋子使用數', type:'number'},
+    {key:'總站數花費時間', label:'總站數花費時間', type:'number'},
+    {key:'新人狀況', label:'新人狀況', type:'text'},
+    {key:'特殊記事異常狀況', label:'特殊記事/異常狀況', type:'text'},
+    {key:'其他', label:'其他', type:'text'},
+  ]},
+  { key:'巧克力桌試吃', label:'巧克力桌試吃', fields:[
+    {key:'開工結束時間', label:'開工/結束時間', type:'time_pair'},
+    {key:'品項', label:'品項', type:'text'},
+    {key:'切切數量', label:'切切數量', type:'number'},
+    {key:'特殊記事異常狀況', label:'特殊記事/異常狀況', type:'text'},
+    {key:'人力配置', label:'人力配置', type:'number'},
+    {key:'其他', label:'其他', type:'text'},
+  ]},
+  { key:'巧克力桌機器', label:'巧克力桌機器', fields:[
+    {key:'開工結束時間', label:'開工/結束時間', type:'time_pair'},
+    {key:'品項', label:'品項', type:'text'},
+    {key:'機器產量', label:'機器產量', type:'number'},
+    {key:'特殊記事異常狀況', label:'特殊記事/異常狀況', type:'text'},
+    {key:'人力配置', label:'人力配置', type:'number'},
+    {key:'其他', label:'其他', type:'text'},
+  ]},
+  { key:'後段', label:'後段', fields:[
+    {key:'開工結束時間', label:'開工/結束時間', type:'time_pair'},
+    {key:'中途停機總時間', label:'中途停機總時間', type:'number'},
+    {key:'人力配置數', label:'人力配置數', type:'number'},
+    {key:'每分產量每車消化時間', label:'每分產量/每車消化時間', type:'number'},
+    {key:'新人狀況', label:'新人狀況', type:'text'},
+    {key:'實際產量', label:'實際產量', type:'number'},
+    {key:'特殊記事異常狀況', label:'特殊記事/異常狀況', type:'text'},
+    {key:'產品轉換時間', label:'產品轉換時間', type:'number'},
+    {key:'其他', label:'其他', type:'text'},
+  ]},
+  { key:'其他分類', label:'其他', fields:[
+    {key:'開工結束時間', label:'開工/結束時間', type:'time_pair'},
+    {key:'品項', label:'品項', type:'text'},
+    {key:'人力配置數', label:'人力配置數', type:'number'},
+    {key:'新人狀況', label:'新人狀況', type:'text'},
+    {key:'特殊記事異常狀況', label:'特殊記事/異常狀況', type:'text'},
+    {key:'實際產量', label:'實際產量', type:'number'},
+    {key:'其他', label:'其他', type:'text'},
+  ]},
+];
 
-function logCategoryTag(cat) {
-  const color = LOG_CATEGORY_COLORS[cat] || 'var(--text2)';
-  return `<span class="tag" style="background:${color}22;color:${color}">${cat||'–'}</span>`;
+function getFilteredWorkLogs() {
+  const dateFrom = document.getElementById('lf-from')?.value || '';
+  const dateTo   = document.getElementById('lf-to')?.value || '';
+  const prodF    = (document.getElementById('lf-product')?.value || '').toLowerCase();
+
+  let data = [...workLogs].sort((a,b) => b.date.localeCompare(a.date) || (b.createdAt||0)-(a.createdAt||0));
+  if (dateFrom) data = data.filter(l => l.date >= dateFrom);
+  if (dateTo)   data = data.filter(l => l.date <= dateTo);
+  if (prodF)    data = data.filter(l => (l.product||'').toLowerCase().includes(prodF));
+  return data;
+}
+
+// 快速設定日期區間：今天 或 本週（週一～週日）
+function setLogDateRange(range) {
+  const now = new Date();
+  if (range === 'today') {
+    const t = today();
+    document.getElementById('lf-from').value = t;
+    document.getElementById('lf-to').value = t;
+  } else if (range === 'week') {
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt2 = d => d.toISOString().split('T')[0];
+    document.getElementById('lf-from').value = fmt2(monday);
+    document.getElementById('lf-to').value = fmt2(sunday);
+  }
+  renderWorkLog();
+}
+
+// 計算這筆日誌裡，哪些分類有實際填寫內容，並附帶每組的品項名稱
+function getFilledSections(log) {
+  const sections = log.sections || {};
+  return LOG_SCHEMA.map(sec => {
+    const groups = sections[sec.key];
+    if (!Array.isArray(groups) || !groups.length) return null;
+    const validGroups = groups.filter(g => sec.fields.some(f => {
+      if (f.type === 'time_pair') return g[f.key+'_start'] || g[f.key+'_end'];
+      return g[f.key] !== undefined && g[f.key] !== '' && g[f.key] !== null;
+    }));
+    if (!validGroups.length) return null;
+    return { label: sec.label, products: validGroups.map(g => g.product || '（無品項）') };
+  }).filter(Boolean);
+}
+
+function exportLogCSV() {
+  if (typeof XLSX === 'undefined') { toast('Excel 匯出元件載入失敗，請重新整理頁面再試一次', 'err'); return; }
+  const data = getFilteredWorkLogs();
+  if (!data.length) { toast('目前篩選範圍內沒有日誌可匯出', 'info'); return; }
+
+  // 動態橫向展開：每個分類每一組各佔一組欄位（依資料中最大組數展開，沒有的留空）
+  const maxGroupsBySection = {};
+  LOG_SCHEMA.forEach(sec => {
+    maxGroupsBySection[sec.key] = Math.max(1, ...data.map(l => ((l.sections||{})[sec.key]||[]).length));
+  });
+
+  const fixedCols = ['日期','星期','品項','目標產量','上班總人數','記錄人'];
+  const sectionRow = fixedCols.map(() => '');
+  const fieldRow   = [...fixedCols];
+
+  LOG_SCHEMA.forEach(sec => {
+    for (let g = 0; g < maxGroupsBySection[sec.key]; g++) {
+      sectionRow.push(`【${sec.label}#${g+1}】`);
+      fieldRow.push('品項');
+      sec.fields.forEach(f => {
+        if (f.type === 'time_pair') {
+          sectionRow.push('', '');
+          fieldRow.push(`${f.label}(開工)`, `${f.label}(結束)`);
+        } else {
+          sectionRow.push('');
+          fieldRow.push(f.label);
+        }
+      });
+    }
+  });
+
+  const rows = [sectionRow, fieldRow];
+  data.forEach(l => {
+    const row = [l.date, weekday(l.date), l.product||'', l.target||'', l.totalWorkers||'', l.createdBy||''];
+    LOG_SCHEMA.forEach(sec => {
+      const groups = (l.sections && l.sections[sec.key]) || [];
+      for (let g = 0; g < maxGroupsBySection[sec.key]; g++) {
+        const vals = groups[g] || {};
+        row.push(vals.product || '');
+        sec.fields.forEach(f => {
+          if (f.type === 'time_pair') {
+            row.push(vals[f.key+'_start']||'', vals[f.key+'_end']||'');
+          } else {
+            row.push(vals[f.key] !== undefined ? vals[f.key] : '');
+          }
+        });
+      }
+    });
+    rows.push(row);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  // 自動欄寬：依每欄所有內容的最大字元長度估算（中文字較寬，估算時加權）
+  const colCount = rows[1].length;
+  ws['!cols'] = Array.from({ length: colCount }, (_, c) => {
+    let maxLen = 6;
+    rows.forEach(r => {
+      const v = String(r[c] ?? '');
+      const visualLen = v.replace(/[^\x00-\xff]/g, 'xx').length; // 中文字當兩個字元寬估算
+      if (visualLen > maxLen) maxLen = visualLen;
+    });
+    return { wch: Math.min(maxLen + 2, 40) };
+  });
+
+  // 全部文字置中對齊
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+      ws[addr].s = { alignment: { horizontal: 'center', vertical: 'center' } };
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '工作日誌');
+
+  const df = document.getElementById('lf-from').value;
+  const dt = document.getElementById('lf-to').value;
+  const rangeLabel = df && dt ? (df === dt ? df : `${df}_至_${dt}`) : today();
+  XLSX.writeFile(wb, `工作日誌_${rangeLabel}.xlsx`);
+  toast(`已匯出 ${data.length} 筆日誌`, 'ok');
+}
+
+// 匯出單筆日誌，直向排列成紙本表單樣式：每個分類獨立標題，底下依序列出每一組（含品項標示）
+function exportSingleLog(id) {
+  if (typeof XLSX === 'undefined') { toast('Excel 匯出元件載入失敗，請重新整理頁面再試一次', 'err'); return; }
+  const l = workLogs.find(x => x.id === id);
+  if (!l) { toast('找不到這筆日誌', 'err'); return; }
+
+  const rows = [];
+  rows.push(['日期', l.date]);
+  rows.push(['品項', l.product||'']);
+  rows.push(['目標產量', l.target||'']);
+  rows.push(['上班總人數', l.totalWorkers ?? '']);
+  rows.push(['', '']);
+
+  LOG_SCHEMA.forEach(sec => {
+    const groups = (l.sections && l.sections[sec.key]) || [];
+    rows.push([sec.label, '']);
+    if (!groups.length) {
+      rows.push(['', '（未填寫）']);
+    } else {
+      groups.forEach((vals, idx) => {
+        if (groups.length > 1) rows.push([`－ 第${idx+1}組（${vals.product||'無品項'}）`, '']);
+        else if (vals.product) rows.push(['品項', vals.product]);
+        sec.fields.forEach(f => {
+          if (f.type === 'time_pair') {
+            const startVal = vals[f.key+'_start'] || '';
+            const endVal   = vals[f.key+'_end'] || '';
+            rows.push([f.label, startVal && endVal ? `${startVal} ～ ${endVal}` : (startVal || endVal || '')]);
+          } else {
+            rows.push([f.label, vals[f.key] !== undefined ? vals[f.key] : '']);
+          }
+        });
+      });
+    }
+    rows.push(['', '']);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  // 兩欄式表單：第一欄（欄位名稱）依內容自動調寬，第二欄（值）給較寬空間方便閱讀
+  let maxLabelLen = 6;
+  rows.forEach(r => {
+    const v = String(r[0] ?? '');
+    const visualLen = v.replace(/[^\x00-\xff]/g, 'xx').length;
+    if (visualLen > maxLabelLen) maxLabelLen = visualLen;
+  });
+  let maxValueLen = 10;
+  rows.forEach(r => {
+    const v = String(r[1] ?? '');
+    const visualLen = v.replace(/[^\x00-\xff]/g, 'xx').length;
+    if (visualLen > maxValueLen) maxValueLen = visualLen;
+  });
+  ws['!cols'] = [{ wch: Math.min(maxLabelLen + 2, 30) }, { wch: Math.min(maxValueLen + 2, 50) }];
+
+  // 全部文字置中對齊
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+      ws[addr].s = { alignment: { horizontal: 'center', vertical: 'center' } };
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '工作日誌');
+  XLSX.writeFile(wb, `工作日誌_${l.date}_${l.product||'無品項'}.xlsx`);
+  toast('已匯出這筆日誌', 'ok');
 }
 
 function renderWorkLog() {
-  const catFilter = document.getElementById('lf-category')?.value || '';
-  const dateFrom  = document.getElementById('lf-from')?.value || '';
-  const dateTo    = document.getElementById('lf-to')?.value || '';
-
-  let data = [...workLogs].sort((a,b) => b.date.localeCompare(a.date) || (b.createdAt||0)-(a.createdAt||0));
-  if (catFilter) data = data.filter(l => l.category === catFilter);
-  if (dateFrom)  data = data.filter(l => l.date >= dateFrom);
-  if (dateTo)    data = data.filter(l => l.date <= dateTo);
+  const data = getFilteredWorkLogs();
 
   const countEl = document.getElementById('log-count');
   if (countEl) countEl.textContent = data.length + ' 筆';
@@ -1973,32 +2281,201 @@ function renderWorkLog() {
   if (!tbody) return;
 
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-text">尚無日誌記錄，點選「＋ 新增日誌」開始記錄</div></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-text">尚無日誌記錄，點選「＋ 新增日誌」開始記錄</div></div></td></tr>`;
     return;
   }
 
   tbody.innerHTML = data.map(l => {
     const wd = weekday(l.date);
+    const filled = getFilledSections(l);
+    const filledHtml = filled.length
+      ? filled.map(f => `<span class="tag" style="background:rgba(200,169,110,.15);color:var(--accent);font-size:10px;margin:1px">${f.label}（${f.products.join('、')}）</span>`).join(' ')
+      : '<span class="muted">（尚未填寫）</span>';
     return `<tr>
+      <td><input type="checkbox" class="log-select-chk" value="${l.id}" data-date="${l.date}"></td>
       <td class="bold" data-th="日期">${l.date}</td>
       <td class="muted" data-th="星期">${wd}</td>
-      <td data-th="分類">${logCategoryTag(l.category)}</td>
-      <td class="muted" data-th="內容" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="點擊展開/收合" onclick="toggleNoteExpand(this)">${escapeHtml(l.content||'')}</td>
+      <td data-th="品項">${escapeHtml(l.product||'–')}</td>
+      <td class="num" data-th="目標產量">${l.target ? fmt(l.target) : '–'}</td>
+      <td class="num" data-th="上班總人數">${l.totalWorkers ?? '–'}</td>
+      <td data-th="已填分類" style="max-width:280px">${filledHtml}</td>
       <td class="muted" data-th="記錄人" style="font-size:11px">${l.createdBy || '–'}</td>
       <td style="white-space:nowrap">
         <button class="btn-alloc" onclick="openEditLog('${l.id}')">編輯</button>
+        <button class="btn-alloc" onclick="exportSingleLog('${l.id}')">⬇匯出</button>
         ${isAdmin() ? `<button class="btn btn-danger" onclick="deleteWorkLog('${l.id}')">✕</button>` : ''}
       </td>
     </tr>`;
   }).join('');
 }
 
+// ── 合併功能：把勾選的同一天多筆日誌，整合成一筆完整日誌 ──
+function mergeSelectedLogs() {
+  const checked = Array.from(document.querySelectorAll('.log-select-chk:checked'));
+  if (checked.length < 2) { toast('請至少勾選 2 筆同一天的日誌才能合併', 'err'); return; }
+
+  const dates = new Set(checked.map(c => c.dataset.date));
+  if (dates.size > 1) { toast('只能合併「同一天」的日誌，請重新勾選', 'err'); return; }
+
+  const ids = checked.map(c => c.value);
+  const logsToMerge = workLogs.filter(l => ids.includes(l.id));
+  if (logsToMerge.length < 2) { toast('找不到足夠的日誌資料', 'err'); return; }
+
+  if (!confirm(`確認合併這 ${logsToMerge.length} 筆 ${logsToMerge[0].date} 的日誌？\n合併後原本的記錄會被刪除，無法復原。`)) return;
+
+  // 品項：把所有不重複的品項用、連接
+  const products = [...new Set(logsToMerge.map(l => l.product).filter(Boolean))];
+  // 目標產量、上班總人數：加總
+  const totalTarget  = logsToMerge.reduce((s,l) => s + (l.target||0), 0);
+  const totalWorkers = logsToMerge.reduce((s,l) => s + (l.totalWorkers||0), 0);
+  // 記錄人：合併所有人名
+  const allCreators = [...new Set(logsToMerge.map(l => l.createdBy).filter(Boolean))];
+
+  // 分類資料：每個分類底下的「組」全部串接起來（不去重，因為不同品項各自獨立）
+  const mergedSections = {};
+  LOG_SCHEMA.forEach(sec => {
+    const allGroups = [];
+    logsToMerge.forEach(l => {
+      const groups = (l.sections && l.sections[sec.key]) || [];
+      groups.forEach(g => {
+        // 如果這組沒有標示品項，用該筆日誌的品項補上，方便辨識來源
+        if (!g.product && l.product) allGroups.push({ ...g, product: l.product });
+        else allGroups.push({ ...g });
+      });
+    });
+    if (allGroups.length) mergedSections[sec.key] = allGroups;
+  });
+
+  const mergedLog = {
+    id: uid(),
+    date: logsToMerge[0].date,
+    product: products.join('、'),
+    target: totalTarget,
+    totalWorkers: totalWorkers,
+    sections: mergedSections,
+    createdBy: allCreators.join('、') || currentUser?.name || '',
+    createdAt: Date.now(),
+    mergedFrom: logsToMerge.map(l => ({ id: l.id, product: l.product, createdBy: l.createdBy })),
+  };
+
+  workLogs = workLogs.filter(l => !ids.includes(l.id));
+  workLogs.push(mergedLog);
+  saveAll();
+  renderWorkLog();
+  toast(`已合併 ${logsToMerge.length} 筆日誌為一筆完整記錄`, 'ok');
+}
+
+// 產生單一分類底下「一組」的表單欄位 HTML（含品項欄）
+function renderLogGroupHtml(sectionKey, fields, groupIndex, vals) {
+  vals = vals || {};
+  const fieldsHtml = fields.map(f => {
+    if (f.type === 'time_pair') {
+      return `<div class="fg">
+        <label>${f.label}</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="time" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}_start" value="${vals[f.key+'_start']||''}" style="flex:1">
+          <span class="muted">～</span>
+          <input type="time" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}_end" value="${vals[f.key+'_end']||''}" style="flex:1">
+        </div>
+      </div>`;
+    } else if (f.type === 'number') {
+      return `<div class="fg">
+        <label>${f.label}</label>
+        <input type="number" class="fc fc-num log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}" value="${vals[f.key]??''}" placeholder="0">
+      </div>`;
+    } else {
+      return `<div class="fg">
+        <label>${f.label}</label>
+        <input type="text" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}" value="${escapeHtml(vals[f.key]||'').replace(/"/g,'&quot;')}" placeholder="輸入內容…">
+      </div>`;
+    }
+  }).join('');
+
+  return `<div class="log-group" data-sec="${sectionKey}" data-group="${groupIndex}">
+    <div class="log-group-head">
+      <span class="muted" style="font-size:11px;flex-shrink:0">品項</span>
+      <input type="text" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="product" value="${escapeHtml(vals.product||'')}" placeholder="例：T3、DP…">
+      <button type="button" class="btn-danger" style="flex-shrink:0" onclick="removeLogGroup(this)">移除</button>
+    </div>
+    <div class="log-group-body">${fieldsHtml}</div>
+  </div>`;
+}
+
+// 產生單一分類的可收合表單區塊 HTML（內含多組 + 新增按鈕）
+function renderLogSectionHtml(section, existingGroups) {
+  const groups = (existingGroups && existingGroups.length) ? existingGroups : [{}]; // 預設給一組空白
+  const groupsHtml = groups.map((g, i) => renderLogGroupHtml(section.key, section.fields, i, g)).join('');
+
+  return `<details class="log-section" data-section-key="${section.key}">
+    <summary class="log-section-summary">${section.label}</summary>
+    <div class="log-groups-container" data-sec="${section.key}">${groupsHtml}</div>
+    <button type="button" class="btn btn-ghost btn-sm log-add-group-btn" onclick="addLogGroup('${section.key}')">＋ 加一組（不同品項）</button>
+  </details>`;
+}
+
+function renderLogSections(existingSections) {
+  const container = document.getElementById('log-sections');
+  container.innerHTML = LOG_SCHEMA.map(sec => renderLogSectionHtml(sec, existingSections && existingSections[sec.key])).join('');
+}
+
+// 取得指定分類目前已有的最大組別索引（用於新增下一組時的 index）
+function getSectionFieldDefs(sectionKey) {
+  const sec = LOG_SCHEMA.find(s => s.key === sectionKey);
+  return sec ? sec.fields : [];
+}
+
+function addLogGroup(sectionKey) {
+  const container = document.querySelector(`.log-groups-container[data-sec="${sectionKey}"]`);
+  if (!container) return;
+  const currentCount = container.querySelectorAll('.log-group').length;
+  const fields = getSectionFieldDefs(sectionKey);
+  container.insertAdjacentHTML('beforeend', renderLogGroupHtml(sectionKey, fields, currentCount, {}));
+}
+
+function removeLogGroup(btn) {
+  const groupEl = btn.closest('.log-group');
+  const container = groupEl.parentElement;
+  if (container.querySelectorAll('.log-group').length <= 1) {
+    toast('至少要保留一組（可以留空不填）', 'info');
+    return;
+  }
+  groupEl.remove();
+}
+
+// 從表單收集所有分類欄位的值，組成 { sectionKey: [ {product, 欄位...}, ... ] } 結構
+function collectLogSections() {
+  const sections = {};
+  document.querySelectorAll('#log-sections .log-group').forEach(groupEl => {
+    const secKey = groupEl.dataset.sec;
+    if (!sections[secKey]) sections[secKey] = [];
+    const groupVals = {};
+    let hasAnyValue = false;
+    groupEl.querySelectorAll('.log-field').forEach(input => {
+      const fieldKey = input.dataset.field;
+      const val = input.value.trim();
+      if (val !== '') {
+        groupVals[fieldKey] = input.type === 'number' ? Number(val) : val;
+        if (fieldKey !== 'product') hasAnyValue = true; // 只填品項、其他都空白時不算有效資料
+      }
+    });
+    // 只要這組有填任何資料（含只填品項），就保留；完全空白的組跳過
+    if (Object.keys(groupVals).length > 0) {
+      sections[secKey].push(groupVals);
+    }
+  });
+  // 移除完全沒有任何組的分類
+  Object.keys(sections).forEach(k => { if (!sections[k].length) delete sections[k]; });
+  return sections;
+}
+
 function openAddLog() {
   document.getElementById('log-id').value = '';
   document.getElementById('m-log-title').textContent = '📝 新增工作日誌';
   document.getElementById('log-date').value = today();
-  document.getElementById('log-category').value = '開合';
-  document.getElementById('log-content').value = '';
+  document.getElementById('log-product').value = '';
+  document.getElementById('log-target').value = '';
+  document.getElementById('log-totalworkers').value = '';
+  renderLogSections(null);
   openModal('m-log');
 }
 
@@ -2008,28 +2485,31 @@ function openEditLog(id) {
   document.getElementById('log-id').value = id;
   document.getElementById('m-log-title').textContent = '✏️ 編輯工作日誌';
   document.getElementById('log-date').value = l.date;
-  document.getElementById('log-category').value = l.category;
-  document.getElementById('log-content').value = l.content;
+  document.getElementById('log-product').value = l.product || '';
+  document.getElementById('log-target').value = l.target || '';
+  document.getElementById('log-totalworkers').value = l.totalWorkers ?? '';
+  renderLogSections(l.sections);
   openModal('m-log');
 }
 
 function saveWorkLog() {
-  const editId   = document.getElementById('log-id').value;
-  const date     = document.getElementById('log-date').value;
-  const category = document.getElementById('log-category').value;
-  const content  = document.getElementById('log-content').value.trim();
+  const editId       = document.getElementById('log-id').value;
+  const date         = document.getElementById('log-date').value;
+  const product      = document.getElementById('log-product').value.trim();
+  const target       = parseInt(document.getElementById('log-target').value) || 0;
+  const totalWorkers = parseInt(document.getElementById('log-totalworkers').value) || 0;
+  const sections     = collectLogSections();
 
   if (!date) { toast('請填入日期', 'err'); return; }
-  if (!content) { toast('請填入內容描述', 'err'); return; }
 
   if (editId) {
     const idx = workLogs.findIndex(x => x.id === editId);
     if (idx >= 0) {
-      workLogs[idx] = { ...workLogs[idx], date, category, content, editedBy: currentUser?.name || '', editedAt: Date.now() };
+      workLogs[idx] = { ...workLogs[idx], date, product, target, totalWorkers, sections, editedBy: currentUser?.name || '', editedAt: Date.now() };
     }
     toast('日誌已更新', 'ok');
   } else {
-    workLogs.push({ id: uid(), date, category, content, createdBy: currentUser?.name || '', createdAt: Date.now() });
+    workLogs.push({ id: uid(), date, product, target, totalWorkers, sections, createdBy: currentUser?.name || '', createdAt: Date.now() });
     toast('日誌已新增', 'ok');
   }
   saveAll();
@@ -2040,7 +2520,7 @@ function saveWorkLog() {
 function deleteWorkLog(id) {
   if (!requireAdmin('刪除工作日誌')) return;
   const l = workLogs.find(x => x.id === id);
-  if (!l || !confirm(`確認刪除 ${l.date} 這筆「${l.category}」日誌？`)) return;
+  if (!l || !confirm(`確認刪除 ${l.date}（${l.product||'無品項'}）這筆日誌？`)) return;
   workLogs = workLogs.filter(x => x.id !== id);
   saveAll();
   renderWorkLog();
