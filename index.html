@@ -292,6 +292,22 @@ hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
   }
   .empty-state { padding: 30px 16px; }
 
+  /* ── 備注欄手機版：直接完整顯示，不截斷、不用點擊（手機卡片本來就逐筆往下排列）── */
+  td[data-th="備注"] {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    white-space: normal !important;
+    max-width: 100% !important;
+    width: 100%;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    cursor: default !important;
+  }
+  td[data-th="備注"]::before {
+    margin-bottom: 2px;
+  }
+
   /* ── 出貨配分卡片（已是 block 結構）：通路 grid 改 2 欄 ── */
   .ac-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .ac-head { flex-wrap: wrap; }
