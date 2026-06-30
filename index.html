@@ -675,7 +675,6 @@ td[data-th="內容"] {
       <span class="chip" id="log-count">0 筆</span>
       <button class="btn btn-ghost btn-sm" onclick="setLogDateRange('today')">今天</button>
       <button class="btn btn-ghost btn-sm" onclick="setLogDateRange('week')">本週</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportLogCSV()">⬇ 匯出 Excel</button>
       <button class="btn" style="background:var(--blue);color:#fff;" onclick="mergeSelectedLogs()">🔗 合併選取</button>
       <button class="btn btn-primary" onclick="openAddLog()">＋ 新增日誌</button>
     </div>
@@ -2303,7 +2302,6 @@ function renderWorkLog() {
       <td class="muted" data-th="記錄人" style="font-size:11px">${l.createdBy || '–'}</td>
       <td style="white-space:nowrap">
         <button class="btn-alloc" onclick="openEditLog('${l.id}')">編輯</button>
-        <button class="btn-alloc" onclick="exportSingleLog('${l.id}')">⬇匯出</button>
         ${isAdmin() ? `<button class="btn btn-danger" onclick="deleteWorkLog('${l.id}')">✕</button>` : ''}
       </td>
     </tr>`;
