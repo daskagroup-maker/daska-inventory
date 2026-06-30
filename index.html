@@ -675,6 +675,7 @@ td[data-th="內容"] {
       <span class="chip" id="log-count">0 筆</span>
       <button class="btn btn-ghost btn-sm" onclick="setLogDateRange('today')">今天</button>
       <button class="btn btn-ghost btn-sm" onclick="setLogDateRange('week')">本週</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportLogCSV()">⬇ 匯出 Excel</button>
       <button class="btn" style="background:var(--blue);color:#fff;" onclick="mergeSelectedLogs()">🔗 合併選取</button>
       <button class="btn btn-primary" onclick="openAddLog()">＋ 新增日誌</button>
     </div>
@@ -2369,18 +2370,30 @@ function renderLogGroupHtml(sectionKey, fields, groupIndex, vals) {
   vals = vals || {};
   const fieldsHtml = fields.map(f => {
     if (f.type === 'time_pair') {
+      const durId = `dur_${sectionKey}_${groupIndex}_${f.key}`.replace(/[^a-zA-Z0-9_]/g, '_');
+      const initDur = (()=>{ const s=vals[f.key+'_start'],e=vals[f.key+'_end']; if(!s||!e) return ''; const [sh,sm]=s.split(':').map(Number),[eh,em]=e.split(':').map(Number); const diff=(eh*60+em)-(sh*60+sm); if(diff<=0) return ''; const net=diff-90; if(net<=0) return '實際工時：0 分（時長不足扣休息）'; return '實際工時：'+(Math.floor(net/60)?Math.floor(net/60)+'小時 ':'')+(net%60?net%60+'分':'')+'（已扣休息 1.5h）'; })();
       return `<div class="fg">
         <label>${f.label}</label>
         <div style="display:flex;gap:8px;align-items:center;">
-          <input type="time" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}_start" value="${vals[f.key+'_start']||''}" style="flex:1">
+          <div style="flex:1;cursor:pointer;" onclick="this.querySelector('input').showPicker?.()??this.querySelector('input').focus()">
+            <input type="time" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}_start" data-dur="${durId}" value="${vals[f.key+'_start']||''}" style="width:100%;pointer-events:none;" oninput="calcTimeDuration(this)">
+          </div>
           <span class="muted">～</span>
-          <input type="time" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}_end" value="${vals[f.key+'_end']||''}" style="flex:1">
+          <div style="flex:1;cursor:pointer;" onclick="this.querySelector('input').showPicker?.()??this.querySelector('input').focus()">
+            <input type="time" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}_end" data-dur="${durId}" value="${vals[f.key+'_end']||''}" style="width:100%;pointer-events:none;" oninput="calcTimeDuration(this)">
+          </div>
         </div>
+        <div id="${durId}" style="font-size:11px;color:var(--green);margin-top:3px;min-height:16px;">${initDur}</div>
       </div>`;
     } else if (f.type === 'number') {
+      const isTimeField = ['中途停機總時間','產品轉換時間','總站數花費時間'].includes(f.key);
+      const timeHint = isTimeField && vals[f.key] > 0
+        ? (() => { const m = vals[f.key]; return (Math.floor(m/60) ? Math.floor(m/60)+'小時 ' : '') + (m%60 ? m%60+'分' : ''); })()
+        : '';
       return `<div class="fg">
-        <label>${f.label}</label>
-        <input type="number" class="fc fc-num log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}" value="${vals[f.key]??''}" placeholder="0">
+        <label>${f.label}${isTimeField ? ' <span style="color:var(--text3);font-weight:400;font-size:10px">（分鐘）</span>' : ''}</label>
+        <input type="number" class="fc fc-num log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="${f.key}" value="${vals[f.key]??''}" placeholder="0"${isTimeField ? ' oninput="calcMinutes(this)"' : ''}>
+        ${isTimeField ? `<div class="log-min-hint" style="font-size:11px;color:var(--green);margin-top:3px;min-height:16px;">${timeHint}</div>` : ''}
       </div>`;
     } else {
       return `<div class="fg">
@@ -2526,9 +2539,42 @@ function deleteWorkLog(id) {
   toast('日誌已刪除', 'info');
 }
 
+
+// ── 分鐘數即時換算顯示 ──
+function calcMinutes(input) {
+  const hint = input.parentElement.querySelector('.log-min-hint');
+  if (!hint) return;
+  const m = parseInt(input.value) || 0;
+  if (m <= 0) { hint.textContent = ''; return; }
+  hint.textContent = (Math.floor(m/60) ? Math.floor(m/60) + ' 小時 ' : '') + (m%60 ? m%60 + ' 分' : '');
+}
+
 // ╔══════════════════════════════════════════════════╗
 // ║  備注展開/收合                                   ║
 // ╚══════════════════════════════════════════════════╝
+
+// ── 開工/結束時間即時計算實際工時（扣除休息 1.5h）──
+function calcTimeDuration(input) {
+  const durId = input.dataset.dur;
+  const durDiv = durId ? document.getElementById(durId) : null;
+  if (!durDiv) return;
+  // 找同一個 fg 下另一個 time input
+  const fg = input.closest('.fg');
+  if (!fg) return;
+  const allInputs = fg.querySelectorAll('input[type="time"]');
+  const s = allInputs[0]?.value, e = allInputs[1]?.value;
+  if (!s || !e) { durDiv.textContent = ''; return; }
+  const [sh, sm] = s.split(':').map(Number);
+  const [eh, em] = e.split(':').map(Number);
+  const diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff < 0) { durDiv.style.color = 'var(--red)'; durDiv.textContent = '⚠️ 結束時間早於開工'; return; }
+  if (diff === 0) { durDiv.textContent = ''; return; }
+  const net = diff - 90;
+  if (net <= 0) { durDiv.style.color = 'var(--orange)'; durDiv.textContent = '實際工時：0 分（總時長不足扣休息）'; return; }
+  durDiv.style.color = 'var(--green)';
+  durDiv.textContent = '實際工時：' + (Math.floor(net/60) ? Math.floor(net/60) + ' 小時 ' : '') + (net%60 ? net%60 + ' 分' : '') + '（已扣休息 1.5h）';
+}
+
 function toggleNoteExpand(el) {
   el.classList.toggle('note-expanded');
 }
