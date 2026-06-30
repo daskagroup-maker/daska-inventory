@@ -731,6 +731,7 @@ td[data-th="內容"] {
     </div>
   </div>
 </div>
+<datalist id="log-product-list"></datalist>
 
 <!-- ═══ 新增/編輯 每日生產 MODAL ═══ -->
 <div class="modal-bg" id="m-entry">
@@ -2406,7 +2407,7 @@ function renderLogGroupHtml(sectionKey, fields, groupIndex, vals) {
   return `<div class="log-group" data-sec="${sectionKey}" data-group="${groupIndex}">
     <div class="log-group-head">
       <span class="muted" style="font-size:11px;flex-shrink:0">品項</span>
-      <input type="text" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="product" value="${escapeHtml(vals.product||'')}" placeholder="例：T3、DP…">
+      <input type="text" class="fc log-field" data-sec="${sectionKey}" data-group="${groupIndex}" data-field="product" value="${escapeHtml(vals.product||'')}" placeholder="選擇或輸入品項…" list="log-product-list" autocomplete="off">
       <button type="button" class="btn-danger" style="flex-shrink:0" onclick="removeLogGroup(this)">移除</button>
     </div>
     <div class="log-group-body">${fieldsHtml}</div>
@@ -2480,6 +2481,13 @@ function collectLogSections() {
   return sections;
 }
 
+function fillLogProductList() {
+  const dl = document.getElementById('log-product-list');
+  if (!dl) return;
+  const codes = [...new Set(products.map(p => p.code).filter(Boolean))].sort();
+  dl.innerHTML = codes.map(c => `<option value="${c}">`).join('');
+}
+
 function openAddLog() {
   document.getElementById('log-id').value = '';
   document.getElementById('m-log-title').textContent = '📝 新增工作日誌';
@@ -2487,6 +2495,7 @@ function openAddLog() {
   document.getElementById('log-product').value = '';
   document.getElementById('log-target').value = '';
   document.getElementById('log-totalworkers').value = '';
+  fillLogProductList();
   renderLogSections(null);
   openModal('m-log');
 }
@@ -2500,6 +2509,7 @@ function openEditLog(id) {
   document.getElementById('log-product').value = l.product || '';
   document.getElementById('log-target').value = l.target || '';
   document.getElementById('log-totalworkers').value = l.totalWorkers ?? '';
+  fillLogProductList();
   renderLogSections(l.sections);
   openModal('m-log');
 }
